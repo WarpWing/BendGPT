@@ -5,7 +5,7 @@ A mock transformer language model written in [Bend](github.com/HigherOrderCO/Ben
 
 Bend is a programming language that looks like Python but runs in parallel on CPUs and GPUs automatically. You write your functions normally and it figures out what can run at the same time (don't ask me how, interaction net wizardry), which turns out to matter a lot for language models.
 
-When a transformer processes a sequence of tokens, most of the work is independent. Each token does its own calculations, each attention head does its own thing, none of them need to wait for each other. Normally to take advantage of that you have to explicitly tell the hardware what to run in parallel, which is most of what CUDA code is doing. In Bend that happens automatically, so you get the speed benefits without the complexity. 
+When a transformer processes text, most of the work can happen simultaneously. Tokens, attention heads, individual calculations are all independent and do not need to wait for each other. The hard part has always been telling the hardware to run things in parallel. That requires low-level, manually written GPU code, which is complex and time-consuming to get right. Bend does it automatically. You get the speed without writing a single line of parallel code.
 
 This project aims to experiment and understand what it looks like to build a transformer in Bend. The benefit is seeing how much Bend's automatic parallelization can accelerate model architecture without writing a single line of thread management code.
 
