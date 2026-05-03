@@ -1,2 +1,25 @@
-# Bend-GPT
-A NanoGPT inspired LLM implementation in Bend
+# nanogpt.bend
+A mock transformer language model written in Bend and run on [HVM2](https://github.com/HigherOrderCO/HVM2).
+
+## what is & why are we using bend
+
+[Bend](github.com/HigherOrderCO/Bend) is a programming language that looks like Python but runs in parallel on CPUs and GPUs automatically. You write your functions normally and it figures out what can run at the same time, which turns out to matter a lot for language models.
+
+When a transformer processes a sequence of tokens, most of the work is independent. Each token does its own calculations, each attention head does its own thing, none of them need to wait for each other. Normally to take advantage of that you have to explicitly tell the hardware what to run in parallel, which is most of what CUDA code is doing. In Bend that happens automatically, so you get the speed benefits without the complexity. 
+
+This project aims to experiment and understand what it looks like to build a transformer in Bend. The benefit is seeing how much Bend's automatic parallelization can accelerate model architecture without writing a single line of thread management code.
+
+## running it
+
+```bash
+bend run-rs nanogpt.bend   # rust
+bend run-c  nanogpt.bend   # c
+bend run-cu nanogpt.bend   # cuda
+```
+
+add `-s` to any of those to print runtime stats (reductions, time, MIPS).
+
+## notes
+Bend only has 24-bit floats (`f24`), so we can't be as precise yet. 
+You'll see some real meat when we start to parallelize.
+Working on this slowly as I dive deeper into Bend.
