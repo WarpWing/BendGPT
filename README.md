@@ -20,7 +20,6 @@ bend run-cu main.bend   # cuda
 add `-s` to any of those to print runtime stats (reductions, time, MIPS).
 
 ## notes
-Bend only has 24-bit floats (`f24`), so we can't be as precise yet. 
-You'll see some real meat when we start to parallelize.
-If you dissect and run parts of this code. You'll see some output in raw lambda calculus form, which is how HVM2 represents data structures internally before they get pretty-printed.
-Working on this slowly as I dive deeper into Bend.
+- Bend only has 24-bit floats (`f24`), so we can't be as precise yet. 
+- If you dissect and run parts of this code. You'll see some output in raw lambda calculus form, which is how HVM2 represents data structures internally before they get pretty-printed.
+
