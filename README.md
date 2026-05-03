@@ -12,9 +12,9 @@ This project aims to experiment and understand what it looks like to build a tra
 ## running it
 
 ```bash
-bend run-rs nanogpt.bend   # rust
-bend run-c  nanogpt.bend   # c
-bend run-cu nanogpt.bend   # cuda
+bend run-rs main.bend   # rust
+bend run-c main.bend   # c
+bend run-cu main.bend   # cuda
 ```
 
 add `-s` to any of those to print runtime stats (reductions, time, MIPS).
