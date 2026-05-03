@@ -17,7 +17,7 @@ bend run-c main.bend   # c
 bend run-cu main.bend   # cuda
 ```
 
-add `-s` to any of those to print runtime stats (reductions, time, MIPS).
+add `-s` after the `run-*` to any of those to print runtime stats (reductions, time, MIPS).
 
 ## notes
 - Bend only has 24-bit floats (`f24`), so we can't be as precise yet. 
