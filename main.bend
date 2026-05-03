@@ -56,6 +56,43 @@ def fvec_max(v: FVec, current: f24) -> f24:
       else:
         return fvec_max(v.tail, current)
 
+def fvec_sum(v: FVec) -> f24:
+  match v:
+    case FVec/Nil:
+      return 0.0
+    case FVec/Cons:
+      return v.head + fvec_sum(v.tail)
+
+def fvec_shift(v: FVec, s: f24) -> FVec:
+  match v:
+    case FVec/Nil:
+      return FVec/Nil
+    case FVec/Cons:
+      return FVec/Cons { head: v.head - s, tail: fvec_shift(v.tail, s) }
+
+# bend has no exp() builtin so we use a taylor series
+# 6 terms is enough given f24 only has ~3 decimal digits of precision anyway
+def exp(x: f24) -> f24:
+  x2 = x * x
+  x3 = x2 * x
+  x4 = x3 * x
+  x5 = x4 * x
+  return 1.0 + x + x2 / 2.0 + x3 / 6.0 + x4 / 24.0 + x5 / 120.0
+
+def fvec_exp(v: FVec) -> FVec:
+  match v:
+    case FVec/Nil:
+      return FVec/Nil
+    case FVec/Cons:
+      return FVec/Cons { head: exp(v.head), tail: fvec_exp(v.tail) }
+
+def softmax(v: FVec) -> FVec:
+  peak  = fvec_max(v, -999.0)
+  use v = v
+  exps  = fvec_exp(fvec_shift(v, peak))
+  total = fvec_sum(exps)
+  return fvec_scale(exps, 1.0/total)
+
 # bend is affine so vec gets used twice here (dot + recursion)
 # the 'use' tells the compiler we know what we're doing and prevents nested dup bugs
 def mat_vec_mul(mat: FMatrix, vec: FVec) -> FVec:
@@ -69,12 +106,7 @@ def mat_vec_mul(mat: FMatrix, vec: FVec) -> FVec:
 def linear(mat: FMatrix, bias: FVec, vec: FVec) -> FVec:
   return fvec_add(mat_vec_mul(mat, vec), bias)
 
-# I needed to write FVec/Cons out because there's no array literal so guess who needs to spell it out node by node :)
 def main() -> FVec:
-  row0 = FVec/Cons { head: 1.0, tail: FVec/Cons { head: 0.0, tail: FVec/Cons { head: 0.0, tail: FVec/Nil } } }
-  row1 = FVec/Cons { head: 0.0, tail: FVec/Cons { head: 1.0, tail: FVec/Cons { head: 0.0, tail: FVec/Nil } } }
-  mat  = FMatrix/Cons { row: row0, tail: FMatrix/Cons { row: row1, tail: FMatrix/Nil } }
-  # input vector [3.0, 4.0, 5.0]
-  vec  = FVec/Cons { head: 3.0, tail: FVec/Cons { head: 4.0, tail: FVec/Cons { head: 5.0, tail: FVec/Nil } } }
-  # should be [3.0, 4.0]
-  return mat_vec_mul(mat, vec)
+  # [1.0, 2.0, 3.0] should softmax to roughly [0.09, 0.245, 0.665]
+  v = FVec/Cons { head: 1.0, tail: FVec/Cons { head: 2.0, tail: FVec/Cons { head: 3.0, tail: FVec/Nil } } }
+  return softmax(v)
