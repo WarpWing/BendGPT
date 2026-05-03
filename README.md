@@ -1,5 +1,5 @@
 # BendGPT
-A mock transformer language model written in [Bend](github.com/HigherOrderCO/Bend) and run on [HVM2](https://github.com/HigherOrderCO/HVM2).
+A mock transformer language model written in [Bend](github.com/HigherOrderCO/Bend).
 
 ## what is & why are we using bend
 
