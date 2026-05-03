@@ -3,6 +3,10 @@ type FVec:
   Nil
   Cons { head: f24, ~tail: FVec }
 
+type FMatrix:
+  Nil
+  Cons { row: FVec, ~tail: FMatrix }
+
 def fvec_dot(a: FVec, b: FVec) -> f24:
   match a:
     case FVec/Nil:
@@ -52,8 +56,25 @@ def fvec_max(v: FVec, current: f24) -> f24:
       else:
         return fvec_max(v.tail, current)
 
-# This should return 32.0
-def main() -> f24:
-  a = FVec/Cons { head: 1.0, tail: FVec/Cons { head: 2.0, tail: FVec/Cons { head: 3.0, tail: FVec/Nil } } }
-  b = FVec/Cons { head: 4.0, tail: FVec/Cons { head: 5.0, tail: FVec/Cons { head: 6.0, tail: FVec/Nil } } }
-  return fvec_dot(a, b) 
+# bend is affine so vec gets used twice here (dot + recursion)
+# the 'use' tells the compiler we know what we're doing and prevents nested dup bugs
+def mat_vec_mul(mat: FMatrix, vec: FVec) -> FVec:
+  match mat:
+    case FMatrix/Nil:
+      return FVec/Nil
+    case FMatrix/Cons:
+      use vec = vec
+      return FVec/Cons { head: fvec_dot(mat.row, vec), tail: mat_vec_mul(mat.tail, vec) }
+
+def linear(mat: FMatrix, bias: FVec, vec: FVec) -> FVec:
+  return fvec_add(mat_vec_mul(mat, vec), bias)
+
+# I needed to write FVec/Cons out because there's no array literal so guess who needs to spell it out node by node :)
+def main() -> FVec:
+  row0 = FVec/Cons { head: 1.0, tail: FVec/Cons { head: 0.0, tail: FVec/Cons { head: 0.0, tail: FVec/Nil } } }
+  row1 = FVec/Cons { head: 0.0, tail: FVec/Cons { head: 1.0, tail: FVec/Cons { head: 0.0, tail: FVec/Nil } } }
+  mat  = FMatrix/Cons { row: row0, tail: FMatrix/Cons { row: row1, tail: FMatrix/Nil } }
+  # input vector [3.0, 4.0, 5.0]
+  vec  = FVec/Cons { head: 3.0, tail: FVec/Cons { head: 4.0, tail: FVec/Cons { head: 5.0, tail: FVec/Nil } } }
+  # should be [3.0, 4.0]
+  return mat_vec_mul(mat, vec)
