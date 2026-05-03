@@ -3,7 +3,7 @@ A mock transformer language model written in [Bend](github.com/HigherOrderCO/Ben
 
 ## what is & why are we using bend
 
-Bend is a programming language that looks like Python but runs in parallel on CPUs and GPUs automatically. You write your functions normally and it figures out what can run at the same time (don't ask me, interaction net wizardry), which turns out to matter a lot for language models.
+Bend is a programming language that looks like Python but runs in parallel on CPUs and GPUs automatically. You write your functions normally and it figures out what can run at the same time (don't ask me how, interaction net wizardry), which turns out to matter a lot for language models.
 
 When a transformer processes a sequence of tokens, most of the work is independent. Each token does its own calculations, each attention head does its own thing, none of them need to wait for each other. Normally to take advantage of that you have to explicitly tell the hardware what to run in parallel, which is most of what CUDA code is doing. In Bend that happens automatically, so you get the speed benefits without the complexity. 
 
