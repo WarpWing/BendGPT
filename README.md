@@ -12,9 +12,9 @@ This project aims to experiment and understand what it looks like to build a tra
 ## running it
 
 ```bash
-bend run-rs -s main.bend   # rust
-bend run-c -s main.bend   # c
-bend run-cu -s main.bend   # cuda
+bend run-rs -s model.bend   # rust
+bend run-c -s model.bend   # c
+bend run-cu -s model.bend   # cuda
 ```
 
 ## notes
