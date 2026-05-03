@@ -21,5 +21,5 @@ add `-s` to any of those to print runtime stats (reductions, time, MIPS).
 
 ## notes
 - Bend only has 24-bit floats (`f24`), so we can't be as precise yet. 
-- If you dissect and run parts of this code. You'll see some output in raw lambda calculus form, which is how HVM2 represents data structures internally before they get pretty-printed.
+- If you dissect and run parts of this code. You'll see some output in raw lambda calculus form (eg. `λa (a FVec/Cons/tag 3.000 λb (b FVec/Cons/tag 4.000 FVec/Nil))`) , which is how HVM2 represents data structures internally before they get pretty-printed.
 
