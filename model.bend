@@ -11,7 +11,6 @@ type Seq:
   Nil
   Cons { vec: FVec, ~tail: Seq }
 
-# all the weights for one transformer layer in one place
 type Weights:
   Mk {
     wq: FMatrix, wk: FMatrix, wv: FMatrix, wo: FMatrix,
@@ -19,6 +18,11 @@ type Weights:
     w2: FMatrix, b2: FVec,
     whead: FMatrix
   }
+
+# the generated token ids — a plain list of u24
+type Tokens:
+  Nil
+  Cons { id: u24, ~tail: Tokens }
 
 def fvec_dot(a: FVec, b: FVec) -> f24:
   match a:
@@ -163,7 +167,6 @@ def ffn(input: FVec, w1: FMatrix, b1: FVec, w2: FMatrix, b2: FVec) -> FVec:
   use input = input
   return fvec_add(input, output)
 
-# project every token in the sequence through a weight matrix
 def project_seq(seq: Seq, mat: FMatrix) -> Seq:
   match seq:
     case Seq/Nil:
@@ -172,7 +175,6 @@ def project_seq(seq: Seq, mat: FMatrix) -> Seq:
       use mat = mat
       return Seq/Cons { vec: mat_vec_mul(mat, seq.vec), tail: project_seq(seq.tail, mat) }
 
-# run attention for every position, building up the output sequence
 def attend_seq(hidden: Seq, keys: Seq, values: Seq, pos: u24, scale: f24) -> Seq:
   match hidden:
     case Seq/Nil:
@@ -199,7 +201,6 @@ def ffn_seq(seq: Seq, w1: FMatrix, b1: FVec, w2: FMatrix, b2: FVec) -> Seq:
         tail: ffn_seq(seq.tail, w1, b1, w2, b2)
       }
 
-# pull out the last vector in a sequence (the only one we predict from)
 def seq_last(seq: Seq) -> FVec:
   match seq:
     case Seq/Nil:
@@ -214,33 +215,79 @@ def seq_last(seq: Seq) -> FVec:
 def forward(tokens: Seq, weights: Weights) -> FVec:
   match weights:
     case Weights/Mk:
-      scale  = 1.0 / 3.0 ** 0.5
-
-      queries = project_seq(tokens, weights.wq)
-      keys    = project_seq(tokens, weights.wk)
-      values  = project_seq(tokens, weights.wv)
-
-      attended = attend_seq(tokens, keys, values, 0, scale)
+      scale     = 1.0 / 3.0 ** 0.5
+      queries   = project_seq(tokens, weights.wq)
+      keys      = project_seq(tokens, weights.wk)
+      values    = project_seq(tokens, weights.wv)
+      attended  = attend_seq(tokens, keys, values, 0, scale)
       projected = project_seq(attended, weights.wo)
-
       after_ffn = ffn_seq(projected, weights.w1, weights.b1, weights.w2, weights.b2)
-
-      last   = seq_last(after_ffn)
-      logits = mat_vec_mul(weights.whead, last)
+      last      = seq_last(after_ffn)
+      logits    = mat_vec_mul(weights.whead, last)
       return softmax(logits)
 
+# greedy decoding — always pick the token with the highest probability
+# no randomness yet, that needs a random seed passed in (future iteration)
+def argmax(probs: FVec, best_idx: u24, best_val: f24, cur_idx: u24) -> u24:
+  match probs:
+    case FVec/Nil:
+      return best_idx
+    case FVec/Cons:
+      if probs.head > best_val:
+        return argmax(probs.tail, cur_idx, probs.head, cur_idx + 1)
+      else:
+        return argmax(probs.tail, best_idx, best_val, cur_idx + 1)
+
+# look up a token embedding by index
+def lookup(idx: u24, embeddings: Seq) -> FVec:
+  match embeddings:
+    case Seq/Nil:
+      return FVec/Nil
+    case Seq/Cons:
+      if idx == 0:
+        return embeddings.vec
+      else:
+        return lookup(idx - 1, embeddings.tail)
+
+# append a new token to the end of the context
+def seq_append(seq: Seq, vec: FVec) -> Seq:
+  match seq:
+    case Seq/Nil:
+      return Seq/Cons { vec: vec, tail: Seq/Nil }
+    case Seq/Cons:
+      return Seq/Cons { vec: seq.vec, tail: seq_append(seq.tail, vec) }
+
+# the generation loop — runs forward, picks the best token, feeds it back in
+def generate(context: Seq, embeddings: Seq, weights: Weights, steps: u24) -> Tokens:
+  if steps == 0:
+    return Tokens/Nil
+  else:
+    use embeddings = embeddings
+    use weights    = weights
+    probs          = forward(context, weights)
+    next_id        = argmax(probs, 0, -999.0, 0)
+    next_vec       = lookup(next_id, embeddings)
+    next_context   = seq_append(context, next_vec)
+    rest           = generate(next_context, embeddings, weights, steps - 1)
+    return Tokens/Cons { id: next_id, tail: rest }
+
 # I needed to write FVec/Cons out because there's no array literal so guess who needs to spell it out node by node :)
-def main() -> FVec:
+def main() -> Tokens:
   t0 = FVec/Cons { head: 1.0, tail: FVec/Cons { head: 0.0, tail: FVec/Cons { head: 0.0, tail: FVec/Nil } } }
   t1 = FVec/Cons { head: 0.0, tail: FVec/Cons { head: 1.0, tail: FVec/Cons { head: 0.0, tail: FVec/Nil } } }
   t2 = FVec/Cons { head: 0.0, tail: FVec/Cons { head: 0.0, tail: FVec/Cons { head: 1.0, tail: FVec/Nil } } }
+  zero = FVec/Cons { head: 0.0, tail: FVec/Cons { head: 0.0, tail: FVec/Cons { head: 0.0, tail: FVec/Nil } } }
 
-  tokens = Seq/Cons { vec: t0, tail: Seq/Cons { vec: t1, tail: Seq/Cons { vec: t2, tail: Seq/Nil } } }
+  prompt = Seq/Cons { vec: t0, tail: Seq/Cons { vec: t1, tail: Seq/Nil } }
+
+  use t0 = t0
+  use t1 = t1
+  use t2 = t2
+  embeddings = Seq/Cons { vec: t0, tail: Seq/Cons { vec: t1, tail: Seq/Cons { vec: t2, tail: Seq/Nil } } }
 
   eye0 = FVec/Cons { head: 1.0, tail: FVec/Cons { head: 0.0, tail: FVec/Cons { head: 0.0, tail: FVec/Nil } } }
   eye1 = FVec/Cons { head: 0.0, tail: FVec/Cons { head: 1.0, tail: FVec/Cons { head: 0.0, tail: FVec/Nil } } }
   eye2 = FVec/Cons { head: 0.0, tail: FVec/Cons { head: 0.0, tail: FVec/Cons { head: 1.0, tail: FVec/Nil } } }
-  zero = FVec/Cons { head: 0.0, tail: FVec/Cons { head: 0.0, tail: FVec/Cons { head: 0.0, tail: FVec/Nil } } }
 
   use eye0 = eye0
   use eye1 = eye1
@@ -248,7 +295,6 @@ def main() -> FVec:
 
   identity = FMatrix/Cons { row: eye0, tail: FMatrix/Cons { row: eye1, tail: FMatrix/Cons { row: eye2, tail: FMatrix/Nil } } }
 
-  # remember affine here
   use identity = identity
   use identity = identity
   use identity = identity
@@ -264,4 +310,4 @@ def main() -> FVec:
     whead: identity
   }
 
-  return forward(tokens, weights)
+  return generate(prompt, embeddings, weights, 3)
