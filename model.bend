@@ -24,7 +24,7 @@ type Tokens:
   Cons { id: u24, ~tail: Tokens }
 
 def fvec_dot(a: FVec, b: FVec) -> f24:
-  match a:
+  fold a with b:
     case FVec/Nil:
       return 0.0
     case FVec/Cons:
@@ -32,7 +32,7 @@ def fvec_dot(a: FVec, b: FVec) -> f24:
         case FVec/Nil:
           return 0.0
         case FVec/Cons:
-          return a.head * b.head + fvec_dot(a.tail, b.tail)
+          return a.head * b.head + a.tail(b.tail)
 
 def fvec_add(a: FVec, b: FVec) -> FVec:
   match a:
@@ -46,45 +46,45 @@ def fvec_add(a: FVec, b: FVec) -> FVec:
           return FVec/Cons { head: a.head + b.head, tail: fvec_add(a.tail, b.tail) }
 
 def fvec_scale(v: FVec, s: f24) -> FVec:
-  match v:
+  fold v with s:
     case FVec/Nil:
       return FVec/Nil
     case FVec/Cons:
-      return FVec/Cons { head: v.head * s, tail: fvec_scale(v.tail, s) }
+      return FVec/Cons { head: v.head * s, tail: v.tail(s) }
 
 def fvec_relu(v: FVec) -> FVec:
-  match v:
+  fold v:
     case FVec/Nil:
       return FVec/Nil
     case FVec/Cons:
       if v.head > 0.0:
-        return FVec/Cons { head: v.head, tail: fvec_relu(v.tail) }
+        return FVec/Cons { head: v.head, tail: v.tail }
       else:
-        return FVec/Cons { head: 0.0, tail: fvec_relu(v.tail) }
+        return FVec/Cons { head: 0.0, tail: v.tail }
 
 def fvec_max(v: FVec, current: f24) -> f24:
-  match v:
+  fold v with current:
     case FVec/Nil:
       return current
     case FVec/Cons:
       if v.head > current:
-        return fvec_max(v.tail, v.head)
+        return v.tail(v.head)
       else:
-        return fvec_max(v.tail, current)
+        return v.tail(current)
 
 def fvec_sum(v: FVec) -> f24:
-  match v:
+  fold v:
     case FVec/Nil:
       return 0.0
     case FVec/Cons:
-      return v.head + fvec_sum(v.tail)
+      return v.head + v.tail
 
 def fvec_shift(v: FVec, s: f24) -> FVec:
-  match v:
+  fold v with s:
     case FVec/Nil:
       return FVec/Nil
     case FVec/Cons:
-      return FVec/Cons { head: v.head - s, tail: fvec_shift(v.tail, s) }
+      return FVec/Cons { head: v.head - s, tail: v.tail(s) }
 
 # bend has no exp() builtin so we use a taylor series
 # 6 terms is enough given f24 only has ~3 decimal digits of precision anyway
@@ -96,11 +96,11 @@ def exp(x: f24) -> f24:
   return 1.0 + x + x2 / 2.0 + x3 / 6.0 + x4 / 24.0 + x5 / 120.0
 
 def fvec_exp(v: FVec) -> FVec:
-  match v:
+  fold v:
     case FVec/Nil:
       return FVec/Nil
     case FVec/Cons:
-      return FVec/Cons { head: exp(v.head), tail: fvec_exp(v.tail) }
+      return FVec/Cons { head: exp(v.head), tail: v.tail }
 
 def softmax(v: FVec) -> FVec:
   peak  = fvec_max(v, -999.0)
@@ -112,37 +112,35 @@ def softmax(v: FVec) -> FVec:
 # bend is affine so vec gets used twice here (dot + recursion)
 # the 'use' tells the compiler we know what we're doing and prevents nested dup bugs
 def mat_vec_mul(mat: FMatrix, vec: FVec) -> FVec:
-  match mat:
+  fold mat with vec:
     case FMatrix/Nil:
       return FVec/Nil
     case FMatrix/Cons:
-      use vec = vec
-      return FVec/Cons { head: fvec_dot(mat.row, vec), tail: mat_vec_mul(mat.tail, vec) }
+      return FVec/Cons { head: fvec_dot(mat.row, vec), tail: mat.tail(vec) }
 
 def linear(mat: FMatrix, bias: FVec, vec: FVec) -> FVec:
   return fvec_add(mat_vec_mul(mat, vec), bias)
 
 def score_query(query: FVec, keys: Seq, scale: f24) -> FVec:
-  match keys:
+  fold keys with query, scale:
     case Seq/Nil:
       return FVec/Nil
     case Seq/Cons:
-      use query = query
       score = fvec_dot(query, keys.vec) * scale
-      return FVec/Cons { head: score, tail: score_query(query, keys.tail, scale) }
+      return FVec/Cons { head: score, tail: keys.tail(query, scale) }
 
 def causal_mask(scores: FVec, key_pos: u24, query_pos: u24) -> FVec:
-  match scores:
+  fold scores with key_pos, query_pos:
     case FVec/Nil:
       return FVec/Nil
     case FVec/Cons:
       if key_pos > query_pos:
-        return FVec/Cons { head: -999.0, tail: causal_mask(scores.tail, key_pos + 1, query_pos) }
+        return FVec/Cons { head: -999.0, tail: scores.tail(key_pos + 1, query_pos) }
       else:
-        return FVec/Cons { head: scores.head, tail: causal_mask(scores.tail, key_pos + 1, query_pos) }
+        return FVec/Cons { head: scores.head, tail: scores.tail(key_pos + 1, query_pos) }
 
 def weighted_sum(weights: FVec, values: Seq) -> FVec:
-  match weights:
+  fold weights with values:
     case FVec/Nil:
       return FVec/Nil
     case FVec/Cons:
@@ -151,7 +149,7 @@ def weighted_sum(weights: FVec, values: Seq) -> FVec:
           return FVec/Nil
         case Seq/Cons:
           scaled = fvec_scale(values.vec, weights.head)
-          rest   = weighted_sum(weights.tail, values.tail)
+          rest   = weights.tail(values.tail)
           return fvec_add(scaled, rest)
 
 def attend(query: FVec, keys: Seq, values: Seq, pos: u24, scale: f24) -> FVec:
@@ -167,37 +165,29 @@ def ffn(input: FVec, w1: FMatrix, b1: FVec, w2: FMatrix, b2: FVec) -> FVec:
   return fvec_add(input, output)
 
 def project_seq(seq: Seq, mat: FMatrix) -> Seq:
-  match seq:
+  fold seq with mat:
     case Seq/Nil:
       return Seq/Nil
     case Seq/Cons:
-      use mat = mat
-      return Seq/Cons { vec: mat_vec_mul(mat, seq.vec), tail: project_seq(seq.tail, mat) }
+      return Seq/Cons { vec: mat_vec_mul(mat, seq.vec), tail: seq.tail(mat) }
 
 def attend_seq(hidden: Seq, keys: Seq, values: Seq, pos: u24, scale: f24) -> Seq:
-  match hidden:
+  fold hidden with keys, values, pos, scale:
     case Seq/Nil:
       return Seq/Nil
     case Seq/Cons:
-      use keys   = keys
-      use values = values
-      attended   = attend(hidden.vec, keys, values, pos, scale)
-      residual   = fvec_add(hidden.vec, attended)
-      rest       = attend_seq(hidden.tail, keys, values, pos + 1, scale)
-      return Seq/Cons { vec: residual, tail: rest }
+      attended = attend(hidden.vec, keys, values, pos, scale)
+      residual = fvec_add(hidden.vec, attended)
+      return Seq/Cons { vec: residual, tail: hidden.tail(keys, values, pos + 1, scale) }
 
 def ffn_seq(seq: Seq, w1: FMatrix, b1: FVec, w2: FMatrix, b2: FVec) -> Seq:
-  match seq:
+  fold seq with w1, b1, w2, b2:
     case Seq/Nil:
       return Seq/Nil
     case Seq/Cons:
-      use w1 = w1
-      use b1 = b1
-      use w2 = w2
-      use b2 = b2
       return Seq/Cons {
         vec: ffn(seq.vec, w1, b1, w2, b2),
-        tail: ffn_seq(seq.tail, w1, b1, w2, b2)
+        tail: seq.tail(w1, b1, w2, b2)
       }
 
 def seq_last(seq: Seq) -> FVec:
@@ -225,35 +215,32 @@ def forward(tokens: Seq, weights: Weights) -> FVec:
       logits    = mat_vec_mul(weights.whead, last)
       return softmax(logits)
 
-# greedy decoding — always pick the token with the highest probability
-# no randomness yet, that needs a random seed passed in (future iteration)
 def argmax(probs: FVec, best_idx: u24, best_val: f24, cur_idx: u24) -> u24:
-  match probs:
+  fold probs with best_idx, best_val, cur_idx:
     case FVec/Nil:
       return best_idx
     case FVec/Cons:
       if probs.head > best_val:
-        return argmax(probs.tail, cur_idx, probs.head, cur_idx + 1)
+        return probs.tail(cur_idx, probs.head, cur_idx + 1)
       else:
-        return argmax(probs.tail, best_idx, best_val, cur_idx + 1)
+        return probs.tail(best_idx, best_val, cur_idx + 1)
 
-# look up a token embedding by index
 def lookup(idx: u24, embeddings: Seq) -> FVec:
-  match embeddings:
+  fold embeddings with idx:
     case Seq/Nil:
       return FVec/Nil
     case Seq/Cons:
       if idx == 0:
         return embeddings.vec
       else:
-        return lookup(idx - 1, embeddings.tail)
+        return embeddings.tail(idx - 1)
 
 def seq_append(seq: Seq, vec: FVec) -> Seq:
-  match seq:
+  fold seq with vec:
     case Seq/Nil:
       return Seq/Cons { vec: vec, tail: Seq/Nil }
     case Seq/Cons:
-      return Seq/Cons { vec: seq.vec, tail: seq_append(seq.tail, vec) }
+      return Seq/Cons { vec: seq.vec, tail: seq.tail(vec) }
 
 def generate(context: Seq, embeddings: Seq, weights: Weights, steps: u24) -> Tokens:
   if steps == 0:
