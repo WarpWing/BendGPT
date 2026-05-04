@@ -11,6 +11,15 @@ type Seq:
   Nil
   Cons { vec: FVec, ~tail: Seq }
 
+# all the weights for one transformer layer in one place
+type Weights:
+  Mk {
+    wq: FMatrix, wk: FMatrix, wv: FMatrix, wo: FMatrix,
+    w1: FMatrix, b1: FVec,
+    w2: FMatrix, b2: FVec,
+    whead: FMatrix
+  }
+
 def fvec_dot(a: FVec, b: FVec) -> f24:
   match a:
     case FVec/Nil:
@@ -22,7 +31,6 @@ def fvec_dot(a: FVec, b: FVec) -> f24:
         case FVec/Cons:
           return a.head * b.head + fvec_dot(a.tail, b.tail)
 
-# treat Nil as a zero vector so weighted_sum bottoms out correctly
 def fvec_add(a: FVec, b: FVec) -> FVec:
   match a:
     case FVec/Nil:
@@ -150,10 +158,32 @@ def attend(query: FVec, keys: Seq, values: Seq, pos: u24, scale: f24) -> FVec:
   return weighted_sum(weights, values)
 
 def ffn(input: FVec, w1: FMatrix, b1: FVec, w2: FMatrix, b2: FVec) -> FVec:
-  hidden   = fvec_relu(linear(w1, b1, input))
-  output   = linear(w2, b2, hidden)
+  hidden    = fvec_relu(linear(w1, b1, input))
+  output    = linear(w2, b2, hidden)
   use input = input
   return fvec_add(input, output)
+
+# project every token in the sequence through a weight matrix
+def project_seq(seq: Seq, mat: FMatrix) -> Seq:
+  match seq:
+    case Seq/Nil:
+      return Seq/Nil
+    case Seq/Cons:
+      use mat = mat
+      return Seq/Cons { vec: mat_vec_mul(mat, seq.vec), tail: project_seq(seq.tail, mat) }
+
+# run attention for every position, building up the output sequence
+def attend_seq(hidden: Seq, keys: Seq, values: Seq, pos: u24, scale: f24) -> Seq:
+  match hidden:
+    case Seq/Nil:
+      return Seq/Nil
+    case Seq/Cons:
+      use keys   = keys
+      use values = values
+      attended   = attend(hidden.vec, keys, values, pos, scale)
+      residual   = fvec_add(hidden.vec, attended)
+      rest       = attend_seq(hidden.tail, keys, values, pos + 1, scale)
+      return Seq/Cons { vec: residual, tail: rest }
 
 def ffn_seq(seq: Seq, w1: FMatrix, b1: FVec, w2: FMatrix, b2: FVec) -> Seq:
   match seq:
@@ -169,26 +199,69 @@ def ffn_seq(seq: Seq, w1: FMatrix, b1: FVec, w2: FMatrix, b2: FVec) -> Seq:
         tail: ffn_seq(seq.tail, w1, b1, w2, b2)
       }
 
-# I needed to write FVec/Cons out because there's no array literal so guess who needs to spell it out node by node :)
-def main() -> Seq:
+# pull out the last vector in a sequence (the only one we predict from)
+def seq_last(seq: Seq) -> FVec:
+  match seq:
+    case Seq/Nil:
+      return FVec/Nil
+    case Seq/Cons:
+      match seq.tail:
+        case Seq/Nil:
+          return seq.vec
+        case Seq/Cons:
+          return seq_last(seq.tail)
 
+def forward(tokens: Seq, weights: Weights) -> FVec:
+  match weights:
+    case Weights/Mk:
+      scale  = 1.0 / 3.0 ** 0.5
+
+      queries = project_seq(tokens, weights.wq)
+      keys    = project_seq(tokens, weights.wk)
+      values  = project_seq(tokens, weights.wv)
+
+      attended = attend_seq(tokens, keys, values, 0, scale)
+      projected = project_seq(attended, weights.wo)
+
+      after_ffn = ffn_seq(projected, weights.w1, weights.b1, weights.w2, weights.b2)
+
+      last   = seq_last(after_ffn)
+      logits = mat_vec_mul(weights.whead, last)
+      return softmax(logits)
+
+# I needed to write FVec/Cons out because there's no array literal so guess who needs to spell it out node by node :)
+def main() -> FVec:
   t0 = FVec/Cons { head: 1.0, tail: FVec/Cons { head: 0.0, tail: FVec/Cons { head: 0.0, tail: FVec/Nil } } }
   t1 = FVec/Cons { head: 0.0, tail: FVec/Cons { head: 1.0, tail: FVec/Cons { head: 0.0, tail: FVec/Nil } } }
   t2 = FVec/Cons { head: 0.0, tail: FVec/Cons { head: 0.0, tail: FVec/Cons { head: 1.0, tail: FVec/Nil } } }
 
-  seq = Seq/Cons { vec: t0, tail: Seq/Cons { vec: t1, tail: Seq/Cons { vec: t2, tail: Seq/Nil } } }
+  tokens = Seq/Cons { vec: t0, tail: Seq/Cons { vec: t1, tail: Seq/Cons { vec: t2, tail: Seq/Nil } } }
 
-  row0 = FVec/Cons { head: 1.0, tail: FVec/Cons { head: 0.0, tail: FVec/Cons { head: 0.0, tail: FVec/Nil } } }
-  row1 = FVec/Cons { head: 0.0, tail: FVec/Cons { head: 1.0, tail: FVec/Cons { head: 0.0, tail: FVec/Nil } } }
-  row2 = FVec/Cons { head: 0.0, tail: FVec/Cons { head: 0.0, tail: FVec/Cons { head: 1.0, tail: FVec/Nil } } }
+  eye0 = FVec/Cons { head: 1.0, tail: FVec/Cons { head: 0.0, tail: FVec/Cons { head: 0.0, tail: FVec/Nil } } }
+  eye1 = FVec/Cons { head: 0.0, tail: FVec/Cons { head: 1.0, tail: FVec/Cons { head: 0.0, tail: FVec/Nil } } }
+  eye2 = FVec/Cons { head: 0.0, tail: FVec/Cons { head: 0.0, tail: FVec/Cons { head: 1.0, tail: FVec/Nil } } }
+  zero = FVec/Cons { head: 0.0, tail: FVec/Cons { head: 0.0, tail: FVec/Cons { head: 0.0, tail: FVec/Nil } } }
 
-  use row0 = row0
-  use row1 = row1
-  use row2 = row2
+  use eye0 = eye0
+  use eye1 = eye1
+  use eye2 = eye2
 
-  w1  = FMatrix/Cons { row: row0, tail: FMatrix/Cons { row: row1, tail: FMatrix/Cons { row: row2, tail: FMatrix/Nil } } }
-  w2  = FMatrix/Cons { row: row0, tail: FMatrix/Cons { row: row1, tail: FMatrix/Cons { row: row2, tail: FMatrix/Nil } } }
-  b1  = FVec/Cons { head: 0.0, tail: FVec/Cons { head: 0.0, tail: FVec/Cons { head: 0.0, tail: FVec/Nil } } }
-  b2  = FVec/Cons { head: 0.0, tail: FVec/Cons { head: 0.0, tail: FVec/Cons { head: 0.0, tail: FVec/Nil } } }
+  identity = FMatrix/Cons { row: eye0, tail: FMatrix/Cons { row: eye1, tail: FMatrix/Cons { row: eye2, tail: FMatrix/Nil } } }
 
-  return ffn_seq(seq, w1, b1, w2, b2)
+  # remember affine here
+  use identity = identity
+  use identity = identity
+  use identity = identity
+  use identity = identity
+  use identity = identity
+  use identity = identity
+  use zero     = zero
+
+  weights = Weights/Mk {
+    wq: identity, wk: identity, wv: identity, wo: identity,
+    w1: identity, b1: zero,
+    w2: identity, b2: zero,
+    whead: identity
+  }
+
+  return forward(tokens, weights)
