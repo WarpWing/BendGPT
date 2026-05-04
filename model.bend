@@ -19,7 +19,6 @@ type Weights:
     whead: FMatrix
   }
 
-# the generated token ids — a plain list of u24
 type Tokens:
   Nil
   Cons { id: u24, ~tail: Tokens }
@@ -249,7 +248,6 @@ def lookup(idx: u24, embeddings: Seq) -> FVec:
       else:
         return lookup(idx - 1, embeddings.tail)
 
-# append a new token to the end of the context
 def seq_append(seq: Seq, vec: FVec) -> Seq:
   match seq:
     case Seq/Nil:
@@ -257,7 +255,6 @@ def seq_append(seq: Seq, vec: FVec) -> Seq:
     case Seq/Cons:
       return Seq/Cons { vec: seq.vec, tail: seq_append(seq.tail, vec) }
 
-# the generation loop — runs forward, picks the best token, feeds it back in
 def generate(context: Seq, embeddings: Seq, weights: Weights, steps: u24) -> Tokens:
   if steps == 0:
     return Tokens/Nil
